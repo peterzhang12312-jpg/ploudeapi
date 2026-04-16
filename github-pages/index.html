@@ -471,7 +471,13 @@ response = client.chat.completions.create(
       let advisorBlockOpen = false;
 
       while (true) {
-        const { done, value } = await reader.read();
+        let done, value;
+        try {
+          ({ done, value } = await reader.read());
+        } catch (readErr) {
+          box.innerHTML += `<span style="color:#f87171">[stream read error: ${readErr.name}: ${readErr.message}]</span>`;
+          break;
+        }
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -582,7 +588,7 @@ response = client.chat.completions.create(
         await streamResponse(resp);
       } catch (err) {
         document.getElementById('response-box').textContent =
-          `Network error: ${err.message}\n\nEnsure CORS is configured in Caddyfile.`;
+          `${err.name}: ${err.message}\n\n${err.stack ?? ''}`;
       } finally {
         finishResponse();
       }
