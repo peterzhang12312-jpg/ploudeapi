@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ploud — Unified LLM Gateway</title>
+  <title>plaudeapi — Unified LLM Gateway</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -70,7 +70,7 @@
     <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
       <div class="flex items-center gap-2">
         <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm">P</div>
-        <span class="font-bold text-lg tracking-tight">Ploud</span>
+        <span class="font-bold text-lg tracking-tight">plaudeapi</span>
         <span class="text-zinc-500 text-sm ml-1">Gateway</span>
       </div>
       <div class="flex items-center gap-5 text-sm text-zinc-400">
@@ -217,7 +217,7 @@
     <!-- Shared token + model row -->
     <div class="grid md:grid-cols-2 gap-4 mb-4">
       <div>
-        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Your Ploud Token</label>
+        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Your plaudeapi Token</label>
         <input id="pg-token" type="password" placeholder="sk-..."
           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500" />
       </div>
@@ -358,7 +358,7 @@ Artificial intelligence (AI) is intelligence demonstrated by machines, as oppose
       </div>
       <pre class="p-6 text-sm leading-relaxed overflow-x-auto"><code><span class="text-zinc-500"># Standard chat</span>
 client = OpenAI(
-    api_key=<span class="text-amber-300">"sk-your-ploud-token"</span>,
+    api_key=<span class="text-amber-300">"sk-your-plaudeapi-token"</span>,
     base_url=<span class="text-amber-300">"https://plaudeapi.com/v1"</span>,
 )
 
@@ -383,7 +383,7 @@ response = client.chat.completions.create(
   <footer class="border-t border-white/5 py-10 px-6 text-center text-zinc-600 text-sm">
     <div class="flex items-center justify-center gap-2 mb-3">
       <div class="w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs">P</div>
-      <span class="font-semibold text-zinc-400">Ploud Gateway</span>
+      <span class="font-semibold text-zinc-400">plaudeapi</span>
     </div>
     <p>
       <a href="https://plaudeapi.com/admin" target="_blank" class="hover:text-zinc-300 transition-colors">Admin Panel</a>
