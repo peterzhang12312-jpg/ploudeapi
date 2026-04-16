@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ploud — Unified LLM Gateway</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: { ploud: { 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed' } }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #09090b; }
+    .gradient-text {
+      background: linear-gradient(135deg, #a78bfa, #60a5fa, #34d399);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .card-glow:hover { box-shadow: 0 0 30px rgba(139,92,246,0.15); }
+    pre, code { font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; }
+    .typing::after { content: '▋'; animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .tab-active   { border-bottom: 2px solid #8b5cf6; color: #a78bfa; }
+    .tab-inactive { color: #71717a; border-bottom: 2px solid transparent; }
+    .tab-inactive:hover { color: #a1a1aa; }
+    #response-box { min-height: 140px; }
+
+    /* Tool call / advisor result display */
+    .tool-call-block {
+      background: rgba(139,92,246,0.08);
+      border: 1px solid rgba(139,92,246,0.25);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 4px 0;
+    }
+    .advisor-block {
+      background: rgba(251,191,36,0.06);
+      border: 1px solid rgba(251,191,36,0.25);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 4px 0;
+    }
+    /* Pulsing indicator while advisor sub-inference runs */
+    .advisor-thinking {
+      background: rgba(251,191,36,0.04);
+      border: 1px solid rgba(251,191,36,0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin: 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .advisor-thinking .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #fbbf24;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  </style>
+</head>
+<body class="text-zinc-100 antialiased">
+
+  <!-- ── Nav ── -->
+  <nav class="border-b border-white/5 bg-black/40 backdrop-blur-sm sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm">P</div>
+        <span class="font-bold text-lg tracking-tight">Ploud</span>
+        <span class="text-zinc-500 text-sm ml-1">Gateway</span>
+      </div>
+      <div class="flex items-center gap-5 text-sm text-zinc-400">
+        <a href="#pricing"    class="hover:text-white transition-colors">Pricing</a>
+        <a href="#models"     class="hover:text-white transition-colors">Models</a>
+        <a href="#playground" class="hover:text-white transition-colors">Playground</a>
+        <a href="https://plaudeapi.com/admin" target="_blank"
+           class="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-full transition-colors font-medium">
+          Admin Panel →
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Hero ── -->
+  <section class="relative overflow-hidden pt-24 pb-20 px-6 text-center">
+    <div class="absolute inset-0 -z-10">
+      <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-violet-600/10 blur-3xl rounded-full"></div>
+    </div>
+    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 text-violet-300 text-sm font-medium mb-8">
+      <span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
+      Live · 100+ models · Anthropic Batch &amp; Flex · Advisor Tool
+    </div>
+    <h1 class="text-5xl md:text-7xl font-black tracking-tight mb-6 leading-none">
+      <span class="gradient-text">One API Key.</span><br/><span class="text-white">Every LLM.</span>
+    </h1>
+    <p class="text-xl text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+      Intelligent routing across OpenAI, Anthropic, Gemini, DeepSeek and more —
+      with automatic Batch &amp; Flex tier selection that cuts your costs by up to 50%.
+    </p>
+    <div class="flex flex-wrap justify-center gap-3">
+      <span class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm">OpenAI-Compatible</span>
+      <span class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm">Streaming SSE</span>
+      <span class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm">Anthropic Batch/Flex</span>
+      <span class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm">Advisor Tool (Beta)</span>
+      <span class="px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm">Auto Failover</span>
+      <span class="px-3 py-1 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-400 text-sm font-medium">Up to 50% cheaper</span>
+    </div>
+  </section>
+
+  <!-- ── Tier Pricing ── -->
+  <section id="pricing" class="max-w-5xl mx-auto px-6 pb-24">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl font-bold mb-3">Automatic Tier Savings</h2>
+      <p class="text-zinc-400 max-w-xl mx-auto">For Claude models, Batch and Flex use Anthropic's native tier pricing. Other models use NewAPI quota multipliers.</p>
+    </div>
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="card-glow rounded-2xl border border-zinc-700/50 bg-zinc-900/50 p-8 transition-all">
+        <div class="text-2xl mb-4">⚡</div>
+        <div class="text-xs font-semibold tracking-widest text-zinc-500 uppercase mb-2">Priority</div>
+        <div class="text-4xl font-black text-blue-400 mb-1">0% <span class="text-lg font-normal text-zinc-500">off</span></div>
+        <div class="text-sm text-zinc-500 mb-4">Prompts &lt; 2K tokens</div>
+        <ul class="text-sm text-zinc-400 space-y-1">
+          <li>• Instant response</li>
+          <li>• All providers</li>
+          <li>• Interactive chat</li>
+        </ul>
+      </div>
+      <div class="card-glow rounded-2xl border border-violet-500/30 bg-gradient-to-b from-violet-900/20 to-zinc-900/50 p-8 transition-all">
+        <div class="text-2xl mb-4">🔀</div>
+        <div class="text-xs font-semibold tracking-widest text-zinc-500 uppercase mb-2">Flex</div>
+        <div class="text-4xl font-black text-violet-400 mb-1">25% <span class="text-lg font-normal text-zinc-500">off</span></div>
+        <div class="text-sm text-zinc-500 mb-4">Prompts 2K–4K tokens</div>
+        <ul class="text-sm text-zinc-400 space-y-1">
+          <li>• Anthropic Flex processing</li>
+          <li>• <code class="text-xs bg-zinc-800 px-1 rounded">anthropic-beta: flex-processing</code></li>
+          <li>• Code review, analysis</li>
+        </ul>
+      </div>
+      <div class="card-glow rounded-2xl border border-emerald-700/30 bg-gradient-to-b from-emerald-900/20 to-zinc-900/50 p-8 transition-all">
+        <div class="text-2xl mb-4">📦</div>
+        <div class="text-xs font-semibold tracking-widest text-zinc-500 uppercase mb-2">Batch</div>
+        <div class="text-4xl font-black text-emerald-400 mb-1">50% <span class="text-lg font-normal text-zinc-500">off</span></div>
+        <div class="text-sm text-zinc-500 mb-4">Prompts &gt; 4K tokens</div>
+        <ul class="text-sm text-zinc-400 space-y-1">
+          <li>• Anthropic native batch API</li>
+          <li>• <code class="text-xs bg-zinc-800 px-1 rounded">message-batches-2024-09-24</code></li>
+          <li>• Summarize, translate, extract</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Models ── -->
+  <section id="models" class="border-y border-white/5 bg-zinc-900/30 py-20 px-6">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold mb-3">Supported Models</h2>
+        <p class="text-zinc-400">Global via OpenRouter · Chinese via SpiritGPU · Automatic failover between providers</p>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div>
+          <div class="flex items-center gap-2 mb-4">
+            <span class="w-6 h-6 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold">OA</span>
+            <span class="font-semibold">OpenAI</span>
+          </div>
+          <ul class="space-y-1.5 text-sm text-zinc-400">
+            <li class="flex justify-between"><span>GPT-4o</span><span class="text-zinc-600">$2.50/1M</span></li>
+            <li class="flex justify-between"><span>GPT-4o Mini</span><span class="text-zinc-600">$0.15/1M</span></li>
+            <li class="flex justify-between"><span>o3-mini</span><span class="text-zinc-600">$1.10/1M</span></li>
+          </ul>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-4">
+            <span class="w-6 h-6 rounded bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold">AN</span>
+            <span class="font-semibold">Anthropic</span>
+            <span class="text-xs bg-violet-900/50 border border-violet-700/50 text-violet-300 px-1.5 py-0.5 rounded-full">Batch/Flex</span>
+          </div>
+          <ul class="space-y-1.5 text-sm text-zinc-400">
+            <li class="flex justify-between"><span>Claude Sonnet 4.6</span><span class="text-zinc-600">$3.00/1M</span></li>
+            <li class="flex justify-between"><span>Claude Haiku 4.5</span><span class="text-zinc-600">$0.80/1M</span></li>
+            <li class="flex justify-between"><span>Claude Opus 4.6</span><span class="text-zinc-600">$15.00/1M</span></li>
+          </ul>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-4">
+            <span class="w-6 h-6 rounded bg-red-500/20 text-red-400 flex items-center justify-center text-xs font-bold">CN</span>
+            <span class="font-semibold">Chinese Models</span>
+          </div>
+          <ul class="space-y-1.5 text-sm text-zinc-400">
+            <li class="flex justify-between"><span>DeepSeek-V3</span><span class="text-zinc-600">$0.27/1M</span></li>
+            <li class="flex justify-between"><span>DeepSeek-R1</span><span class="text-zinc-600">$0.55/1M</span></li>
+            <li class="flex justify-between"><span>Qwen Max</span><span class="text-zinc-600">$0.40/1M</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Playground ── -->
+  <section id="playground" class="max-w-3xl mx-auto px-6 py-20">
+    <div class="text-center mb-8">
+      <h2 class="text-3xl font-bold mb-3">Live Playground</h2>
+      <p class="text-zinc-400">Test chat, Batch/Flex tiers, and the Anthropic Advisor Tool directly from your browser.</p>
+    </div>
+
+    <!-- Playground tabs -->
+    <div class="flex border-b border-zinc-800 mb-6 gap-1">
+      <button onclick="switchTab('chat')"    id="tab-chat"    class="px-4 py-2 text-sm font-medium transition-colors tab-active">💬 Chat</button>
+      <button onclick="switchTab('batch')"   id="tab-batch"   class="px-4 py-2 text-sm font-medium transition-colors tab-inactive">📦 Batch / Flex</button>
+      <button onclick="switchTab('advisor')" id="tab-advisor" class="px-4 py-2 text-sm font-medium transition-colors tab-inactive">🧠 Advisor Tool</button>
+    </div>
+
+    <!-- Shared token + model row -->
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Your Ploud Token</label>
+        <input id="pg-token" type="password" placeholder="sk-..."
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Model</label>
+        <select id="pg-model"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-violet-500">
+          <option value="gpt-4o">gpt-4o (OpenRouter)</option>
+          <option value="gpt-4o-mini">gpt-4o-mini (OpenRouter)</option>
+          <option value="claude-3-5-haiku-20241022">claude-haiku-3-5 (Anthropic)</option>
+          <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (Anthropic · Advisor ✓)</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 (Anthropic · Advisor ✓)</option>
+          <option value="claude-opus-4-6">claude-opus-4-6 (Anthropic · Advisor ✓)</option>
+          <option value="deepseek-chat">deepseek-chat (SpiritGPU)</option>
+          <option value="qwen-max">qwen-max (SpiritGPU)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ── Tab: Chat ── -->
+    <div id="panel-chat" class="space-y-4">
+      <div>
+        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Message</label>
+        <textarea id="chat-message" rows="3" placeholder="Ask anything..."
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500 resize-none">Explain the three laws of thermodynamics briefly.</textarea>
+      </div>
+      <button onclick="sendChat()"
+        class="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm">
+        Send →
+      </button>
+    </div>
+
+    <!-- ── Tab: Batch / Flex ── -->
+    <div id="panel-batch" class="space-y-4 hidden">
+      <div class="grid grid-cols-2 gap-3">
+        <button onclick="selectBatchTier('flex')" id="btn-flex"
+          class="p-3 rounded-xl border border-zinc-700 text-sm text-left hover:border-violet-500 transition-colors">
+          <div class="font-semibold text-violet-300 mb-1">Flex — 25% off</div>
+          <div class="text-xs text-zinc-500">X-Tier: flex · anthropic-beta: flex-processing-2025-04-01</div>
+        </button>
+        <button onclick="selectBatchTier('batch')" id="btn-batch"
+          class="p-3 rounded-xl border border-emerald-700/40 bg-emerald-900/10 text-sm text-left hover:border-emerald-500 transition-colors">
+          <div class="font-semibold text-emerald-300 mb-1">Batch — 50% off</div>
+          <div class="text-xs text-zinc-500">X-Tier: batch · anthropic-beta: message-batches-2024-09-24</div>
+        </button>
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">Prompt (paste a long document or use the example)</label>
+        <textarea id="batch-message" rows="5"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-violet-500 resize-none"
+>Summarize the following in 5 bullet points:
+
+Artificial intelligence (AI) is intelligence demonstrated by machines, as opposed to the natural intelligence displayed by animals including humans. AI research has been defined as the field of study of intelligent agents, which refers to any system that perceives its environment and takes actions that maximize its chance of achieving its goals. The term "artificial intelligence" had previously been used to describe machines that mimic and display human cognitive skills associated with the human mind, such as learning and problem-solving. This definition has since been rejected by major AI researchers who now describe AI in terms of rationality and acting rationally, which does not limit how intelligence can be articulated.</textarea>
+      </div>
+      <button onclick="sendBatch()"
+        class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm">
+        Send with Tier Override →
+      </button>
+    </div>
+
+    <!-- ── Tab: Advisor Tool ── -->
+    <div id="panel-advisor" class="space-y-4 hidden">
+
+      <!-- Explanation card -->
+      <div class="bg-amber-950/20 border border-amber-700/30 rounded-xl p-4 text-sm space-y-3">
+        <div class="font-semibold text-amber-300 flex items-center gap-2">
+          🧠 Anthropic Advisor Tool
+          <span class="text-xs bg-amber-900/50 border border-amber-700/50 text-amber-400 px-1.5 py-0.5 rounded-full font-normal">Beta</span>
+        </div>
+        <p class="text-zinc-400 leading-relaxed">
+          A <strong class="text-zinc-200">server-side Anthropic feature</strong> that pairs a fast
+          <em>executor model</em> (Sonnet or Haiku) with a smarter <em>advisor model</em> (Opus).
+          Midway through generation, the executor calls the advisor — Anthropic runs a separate
+          Opus sub-inference that reads the full conversation and returns strategic guidance.
+          Everything happens inside one API call with no extra round trips.
+        </p>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div class="bg-zinc-900 rounded-lg p-2 text-center">
+            <div class="text-zinc-500 mb-1">Executor</div>
+            <div class="text-violet-300 font-mono">claude-sonnet-4-6</div>
+          </div>
+          <div class="bg-zinc-900 rounded-lg p-2 text-center flex items-center justify-center text-zinc-500">
+            consults →
+          </div>
+          <div class="bg-zinc-900 rounded-lg p-2 text-center">
+            <div class="text-zinc-500 mb-1">Advisor</div>
+            <div class="text-amber-300 font-mono">claude-opus-4-6</div>
+          </div>
+        </div>
+        <div class="text-xs text-zinc-600 bg-zinc-900 border border-zinc-800 rounded-lg p-3 font-mono space-y-1">
+          <div>Header sent: <span class="text-amber-400">X-Ploud-Advisor: true</span></div>
+          <div>Middleware injects: <span class="text-violet-400">type: advisor_20260301, model: claude-opus-4-6</span></div>
+          <div>Beta added: <span class="text-violet-400">anthropic-beta: advisor-tool-2026-03-01</span></div>
+          <div class="text-zinc-700 pt-1">Requires Claude executor model (Haiku/Sonnet/Opus)</div>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs text-zinc-500 uppercase tracking-wider mb-1">
+          Task (use a complex, multi-step prompt to encourage advisor consultation)
+        </label>
+        <textarea id="advisor-message" rows="4"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-violet-500 resize-none"
+>Build a concurrent worker pool in Go with graceful shutdown. The pool should process jobs from a channel, support a configurable number of workers, and drain all in-flight work before exiting when a shutdown signal is received.</textarea>
+      </div>
+
+      <div class="text-xs text-zinc-600 bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2">
+        Select <strong class="text-amber-300">claude-sonnet-4-6</strong> or <strong class="text-amber-300">claude-haiku-4-5-20251001</strong> above for the Advisor Tool to activate.
+      </div>
+
+      <button onclick="sendAdvisor()"
+        class="w-full bg-amber-700 hover:bg-amber-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm">
+        Send with Advisor Tool →
+      </button>
+    </div>
+
+    <!-- Shared response area -->
+    <div class="mt-5">
+      <div class="flex items-center justify-between mb-2">
+        <label class="text-xs text-zinc-500 uppercase tracking-wider">Response</label>
+        <div id="meta-badges" class="flex gap-2"></div>
+      </div>
+      <div id="response-box"
+        class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-500 italic font-mono leading-relaxed whitespace-pre-wrap">
+        Response will appear here...
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Quick Start code ── -->
+  <section class="max-w-3xl mx-auto px-6 pb-20">
+    <div class="text-center mb-8">
+      <h2 class="text-3xl font-bold mb-3">Connect in 2 Lines</h2>
+    </div>
+    <div class="rounded-2xl border border-zinc-700/50 bg-zinc-900 overflow-hidden">
+      <div class="border-b border-zinc-700/50 px-4 pt-3">
+        <span class="inline-block px-3 pb-3 border-b-2 border-violet-500 text-violet-300 text-sm font-medium">Python</span>
+      </div>
+      <pre class="p-6 text-sm leading-relaxed overflow-x-auto"><code><span class="text-zinc-500"># Standard chat</span>
+client = OpenAI(
+    api_key=<span class="text-amber-300">"sk-your-ploud-token"</span>,
+    base_url=<span class="text-amber-300">"https://plaudeapi.com/v1"</span>,
+)
+
+<span class="text-zinc-500"># Force Batch tier (50% off) on any model</span>
+response = client.chat.completions.create(
+    model=<span class="text-amber-300">"claude-sonnet-4-6"</span>,
+    messages=[{<span class="text-amber-300">"role"</span>: <span class="text-amber-300">"user"</span>, <span class="text-amber-300">"content"</span>: long_document}],
+    extra_headers={<span class="text-amber-300">"X-Tier"</span>: <span class="text-amber-300">"batch"</span>},
+)
+
+<span class="text-zinc-500"># Enable Advisor Tool — middleware injects Opus advisor automatically</span>
+<span class="text-zinc-500"># Sonnet executor consults Opus mid-generation for strategic guidance</span>
+response = client.chat.completions.create(
+    model=<span class="text-amber-300">"claude-sonnet-4-6"</span>,
+    messages=[{<span class="text-amber-300">"role"</span>: <span class="text-amber-300">"user"</span>, <span class="text-amber-300">"content"</span>: complex_coding_task}],
+    extra_headers={<span class="text-amber-300">"X-Ploud-Advisor"</span>: <span class="text-amber-300">"true"</span>},
+)</code></pre>
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="border-t border-white/5 py-10 px-6 text-center text-zinc-600 text-sm">
+    <div class="flex items-center justify-center gap-2 mb-3">
+      <div class="w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center text-white font-bold text-xs">P</div>
+      <span class="font-semibold text-zinc-400">Ploud Gateway</span>
+    </div>
+    <p>
+      <a href="https://plaudeapi.com/admin" target="_blank" class="hover:text-zinc-300 transition-colors">Admin Panel</a>
+      &nbsp;·&nbsp;
+      <a href="https://plaudeapi.com/v1/models" target="_blank" class="hover:text-zinc-300 transition-colors">Model List</a>
+      &nbsp;·&nbsp;
+      <a href="https://plaudeapi.com/v1/advisor-tool" target="_blank" class="hover:text-zinc-300 transition-colors">Advisor Tool Schema</a>
+    </p>
+    <p class="mt-2">Powered by NewAPI · OpenRouter · SpiritGPU · Caddy</p>
+  </footer>
+
+  <script>
+    // ── Gateway config ────────────────────────────────────────────────────────
+    const GATEWAY = 'https://plaudeapi.com';
+
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    function switchTab(name) {
+      ['chat','batch','advisor'].forEach(t => {
+        document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== name);
+        const tab = document.getElementById(`tab-${t}`);
+        tab.className = tab.className.replace(/tab-active|tab-inactive/g, '').trim();
+        tab.className += ' ' + (t === name ? 'tab-active' : 'tab-inactive');
+      });
+      clearResponse();
+    }
+
+    // ── Batch tier selection ──────────────────────────────────────────────────
+    let selectedBatchTier = 'batch';
+    function selectBatchTier(tier) {
+      selectedBatchTier = tier;
+      const flex  = document.getElementById('btn-flex');
+      const batch = document.getElementById('btn-batch');
+      flex.classList.remove('border-violet-500');
+      batch.classList.remove('border-emerald-500');
+      if (tier === 'flex')  flex.classList.add('border-violet-500');
+      if (tier === 'batch') batch.classList.add('border-emerald-500');
+    }
+
+    // ── Shared response helpers ───────────────────────────────────────────────
+    function clearResponse() {
+      const box = document.getElementById('response-box');
+      box.innerHTML = '';
+      box.textContent = 'Response will appear here...';
+      box.classList.add('italic','text-zinc-500');
+      box.classList.remove('typing','text-zinc-200');
+      document.getElementById('meta-badges').innerHTML = '';
+    }
+
+    function startResponse() {
+      const box = document.getElementById('response-box');
+      box.innerHTML = '';
+      box.classList.remove('italic','text-zinc-500');
+      box.classList.add('typing','text-zinc-200');
+    }
+
+    function finishResponse() {
+      document.getElementById('response-box').classList.remove('typing');
+    }
+
+    function showBadges(resp) {
+      const container = document.getElementById('meta-badges');
+      const tier    = resp.headers.get('X-Ploud-Tier');
+      const mult    = resp.headers.get('X-Ploud-Cost-Multiplier');
+      const prov    = resp.headers.get('X-Ploud-Provider');
+      const savings = tier && mult ? `${((1 - parseFloat(mult)) * 100)|0}% saved` : null;
+
+      container.innerHTML = [
+        tier    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300">${tier.toUpperCase()}</span>` : '',
+        savings ? `<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-400">${savings}</span>` : '',
+        prov    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-500">${prov}</span>` : '',
+      ].join('');
+    }
+
+    // ── Stream handler ────────────────────────────────────────────────────────
+    // Handles four delta types:
+    //   1. Plain text content  → append to box
+    //   2. tool_calls delta    → render as purple advisor block (ploud_clarify fallback)
+    //   3. Ploud savings note  → treated as plain text (already injected server-side)
+    //   4. Advisor thinking    → show amber pulse while stream pauses (heuristic: long silence)
+    async function streamResponse(resp) {
+      const box     = document.getElementById('response-box');
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let advisorBlockOpen = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+          try {
+            const data  = JSON.parse(line.slice(6));
+            const delta = data.choices?.[0]?.delta || {};
+
+            // Plain text delta — append directly
+            if (typeof delta.content === 'string' && delta.content !== '') {
+              // Close any open advisor thinking indicator
+              if (advisorBlockOpen) {
+                const thinking = box.querySelector('.advisor-thinking');
+                if (thinking) thinking.remove();
+                advisorBlockOpen = false;
+              }
+              // Create a text node span if not already present
+              let textNode = box.querySelector('.text-content');
+              if (!textNode) {
+                textNode = document.createElement('span');
+                textNode.className = 'text-content whitespace-pre-wrap';
+                box.appendChild(textNode);
+              }
+              textNode.textContent += delta.content;
+              continue;
+            }
+
+            // tool_calls delta — render as structured block
+            // This covers both ploud_clarify (non-Claude) and any tool calls
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const fn   = tc.function || {};
+                const name = fn.name || 'tool';
+                let args   = fn.arguments || '';
+                try { args = JSON.stringify(JSON.parse(args), null, 2); } catch {}
+                const block = document.createElement('div');
+                block.className = 'tool-call-block not-italic';
+                block.innerHTML = `<div class="text-violet-300 font-semibold text-xs uppercase tracking-wider mb-2">🛠 Tool Call — ${name}()</div><pre class="text-zinc-300 text-xs whitespace-pre-wrap">${escHtml(args)}</pre>`;
+                box.appendChild(block);
+              }
+            }
+
+            // Detect stream pause heuristic: finish_reason=null but no content
+            // This happens when the advisor sub-inference is running server-side.
+            const choice = data.choices?.[0];
+            if (choice && choice.finish_reason === null && !delta.content && !delta.tool_calls) {
+              if (!advisorBlockOpen) {
+                const thinking = document.createElement('div');
+                thinking.className = 'advisor-thinking not-italic';
+                thinking.innerHTML = `<div class="dot"></div><span class="text-amber-400 text-xs">Consulting Opus advisor…</span>`;
+                box.appendChild(thinking);
+                advisorBlockOpen = true;
+              }
+            }
+
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
+      // Remove any leftover thinking indicator at stream end
+      const thinking = box.querySelector('.advisor-thinking');
+      if (thinking) thinking.remove();
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Shared fetch wrapper ──────────────────────────────────────────────────
+    async function callGateway(message, extraHeaders = {}) {
+      const token = document.getElementById('pg-token').value.trim();
+      const model = document.getElementById('pg-model').value;
+      if (!token) {
+        document.getElementById('response-box').textContent = 'Enter your Ploud token above.';
+        return;
+      }
+
+      startResponse();
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type':  'application/json',
+        ...extraHeaders,
+      };
+
+      try {
+        const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: message }],
+            stream: true,
+          }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.text();
+          document.getElementById('response-box').textContent = `Error ${resp.status}:\n${err}`;
+          finishResponse();
+          return;
+        }
+
+        showBadges(resp);
+        await streamResponse(resp);
+      } catch (err) {
+        document.getElementById('response-box').textContent =
+          `Network error: ${err.message}\n\nEnsure CORS is configured in Caddyfile.`;
+      } finally {
+        finishResponse();
+      }
+    }
+
+    // ── Per-tab send functions ────────────────────────────────────────────────
+    function sendChat() {
+      callGateway(document.getElementById('chat-message').value.trim());
+    }
+
+    function sendBatch() {
+      callGateway(
+        document.getElementById('batch-message').value.trim(),
+        { 'X-Tier': selectedBatchTier }
+      );
+    }
+
+    function sendAdvisor() {
+      // Warn if a non-Claude model is selected — advisor only works with Claude
+      const model = document.getElementById('pg-model').value;
+      if (!model.includes('claude')) {
+        document.getElementById('response-box').textContent =
+          'The Advisor Tool requires a Claude model.\nPlease select claude-sonnet-4-6 or claude-haiku-4-5-20251001 above.';
+        return;
+      }
+      callGateway(
+        document.getElementById('advisor-message').value.trim(),
+        { 'X-Ploud-Advisor': 'true' }
+      );
+    }
+  </script>
+</body>
+</html>
