@@ -443,45 +443,53 @@ response = client.chat.completions.create(
       document.getElementById('response-box').classList.remove('typing');
     }
 
-    function showBadges(resp) {
-      const container = document.getElementById('meta-badges');
-      const tier    = resp.headers.get('X-Ploud-Tier');
-      const mult    = resp.headers.get('X-Ploud-Cost-Multiplier');
-      const prov    = resp.headers.get('X-Ploud-Provider');
-      const savings = tier && mult ? `${((1 - parseFloat(mult)) * 100)|0}% saved` : null;
-
-      container.innerHTML = [
-        tier    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300">${tier.toUpperCase()}</span>` : '',
-        savings ? `<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-400">${savings}</span>` : '',
-        prov    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-500">${prov}</span>` : '',
-      ].join('');
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    // ── Stream handler ────────────────────────────────────────────────────────
-    // Handles four delta types:
-    //   1. Plain text content  → append to box
-    //   2. tool_calls delta    → render as purple advisor block (ploud_clarify fallback)
-    //   3. Ploud savings note  → treated as plain text (already injected server-side)
-    //   4. Advisor thinking    → show amber pulse while stream pauses (heuristic: long silence)
-    async function streamResponse(resp) {
-      const box     = document.getElementById('response-box');
-      const reader  = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let advisorBlockOpen = false;
+    // ── Shared gateway call (XHR-based for HTTP/2 SSE compatibility) ──────────
+    // Uses XMLHttpRequest instead of fetch ReadableStream to avoid the
+    // TypeError: network error that some browsers throw at reader.read()
+    // when streaming SSE over HTTP/2.
+    function callGateway(message, extraHeaders = {}) {
+      const token = document.getElementById('pg-token').value.trim();
+      const model = document.getElementById('pg-model').value;
+      if (!token) {
+        document.getElementById('response-box').textContent = 'Enter your Ploud token above.';
+        return;
+      }
 
-      while (true) {
-        let done, value;
-        try {
-          ({ done, value } = await reader.read());
-        } catch (readErr) {
-          box.innerHTML += `<span style="color:#f87171">[stream read error: ${readErr.name}: ${readErr.message}]</span>`;
-          break;
-        }
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
+      startResponse();
+      const box = document.getElementById('response-box');
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${GATEWAY}/v1/chat/completions`, true);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      for (const [k, v] of Object.entries(extraHeaders)) xhr.setRequestHeader(k, v);
+
+      let processed = 0;
+      let sseBuffer = '';
+      let advisorBlockOpen = false;
+      let badgesShown = false;
+
+      function showBadgesXHR() {
+        const container = document.getElementById('meta-badges');
+        const tier    = xhr.getResponseHeader('X-Ploud-Tier');
+        const mult    = xhr.getResponseHeader('X-Ploud-Cost-Multiplier');
+        const prov    = xhr.getResponseHeader('X-Ploud-Provider');
+        const savings = tier && mult ? `${((1 - parseFloat(mult)) * 100)|0}% saved` : null;
+        container.innerHTML = [
+          tier    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300">${tier.toUpperCase()}</span>` : '',
+          savings ? `<span class="text-xs px-2 py-0.5 rounded-full bg-emerald-900/50 border border-emerald-700/50 text-emerald-400">${savings}</span>` : '',
+          prov    ? `<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-500">${prov}</span>` : '',
+        ].join('');
+      }
+
+      function processSSE(chunk) {
+        sseBuffer += chunk;
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop();
 
         for (const line of lines) {
           if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
@@ -489,15 +497,12 @@ response = client.chat.completions.create(
             const data  = JSON.parse(line.slice(6));
             const delta = data.choices?.[0]?.delta || {};
 
-            // Plain text delta — append directly
             if (typeof delta.content === 'string' && delta.content !== '') {
-              // Close any open advisor thinking indicator
               if (advisorBlockOpen) {
                 const thinking = box.querySelector('.advisor-thinking');
                 if (thinking) thinking.remove();
                 advisorBlockOpen = false;
               }
-              // Create a text node span if not already present
               let textNode = box.querySelector('.text-content');
               if (!textNode) {
                 textNode = document.createElement('span');
@@ -508,8 +513,6 @@ response = client.chat.completions.create(
               continue;
             }
 
-            // tool_calls delta — render as structured block
-            // This covers both ploud_clarify (non-Claude) and any tool calls
             if (delta.tool_calls) {
               for (const tc of delta.tool_calls) {
                 const fn   = tc.function || {};
@@ -523,8 +526,6 @@ response = client.chat.completions.create(
               }
             }
 
-            // Detect stream pause heuristic: finish_reason=null but no content
-            // This happens when the advisor sub-inference is running server-side.
             const choice = data.choices?.[0];
             if (choice && choice.finish_reason === null && !delta.content && !delta.tool_calls) {
               if (!advisorBlockOpen) {
@@ -535,63 +536,43 @@ response = client.chat.completions.create(
                 advisorBlockOpen = true;
               }
             }
-
           } catch { /* ignore parse errors */ }
         }
       }
 
-      // Remove any leftover thinking indicator at stream end
-      const thinking = box.querySelector('.advisor-thinking');
-      if (thinking) thinking.remove();
-    }
-
-    function escHtml(s) {
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
-    // ── Shared fetch wrapper ──────────────────────────────────────────────────
-    async function callGateway(message, extraHeaders = {}) {
-      const token = document.getElementById('pg-token').value.trim();
-      const model = document.getElementById('pg-model').value;
-      if (!token) {
-        document.getElementById('response-box').textContent = 'Enter your Ploud token above.';
-        return;
-      }
-
-      startResponse();
-
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type':  'application/json',
-        ...extraHeaders,
+      xhr.onprogress = function() {
+        if (!badgesShown) { badgesShown = true; showBadgesXHR(); }
+        const newText = xhr.responseText.slice(processed);
+        processed = xhr.responseText.length;
+        if (newText) processSSE(newText);
       };
 
-      try {
-        const resp = await fetch(`${GATEWAY}/v1/chat/completions`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'user', content: message }],
-            stream: true,
-          }),
-        });
+      xhr.onloadend = function() {
+        const tail = xhr.responseText.slice(processed);
+        if (tail) processSSE(tail);
+        const thinking = box.querySelector('.advisor-thinking');
+        if (thinking) thinking.remove();
 
-        if (!resp.ok) {
-          const err = await resp.text();
-          document.getElementById('response-box').textContent = `Error ${resp.status}:\n${err}`;
-          finishResponse();
-          return;
+        if (xhr.status === 0) {
+          box.textContent = 'Network error: could not reach ' + GATEWAY +
+            '\nEnsure CORS is configured and the server is reachable.';
+        } else if (xhr.status >= 400) {
+          box.textContent = `Error ${xhr.status}:\n${xhr.responseText}`;
         }
-
-        showBadges(resp);
-        await streamResponse(resp);
-      } catch (err) {
-        document.getElementById('response-box').textContent =
-          `${err.name}: ${err.message}\n\n${err.stack ?? ''}`;
-      } finally {
+        if (!badgesShown) showBadgesXHR();
         finishResponse();
-      }
+      };
+
+      xhr.onerror = function() {
+        box.textContent = 'Network error: could not reach ' + GATEWAY;
+        finishResponse();
+      };
+
+      xhr.send(JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: message }],
+        stream: true,
+      }));
     }
 
     // ── Per-tab send functions ────────────────────────────────────────────────
